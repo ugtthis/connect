@@ -23,14 +23,27 @@ class App extends Component {
   constructor(props) {
     super(props);
 
+    let pairToken;
+    let hasPhotoboothDirectAddress = false;
+    let openPhotoboothAfterPair = false;
+    if (window.location) {
+      const parsed = qs.parse(window.location.search);
+      pairToken = parsed.pair;
+      openPhotoboothAfterPair = parsed.photobooth === '1' && Boolean(parsed.pair);
+      hasPhotoboothDirectAddress = parsed.photobooth === '1' && typeof parsed.body === 'string' && parsed.body.length > 0;
+      if (openPhotoboothAfterPair) {
+        try {
+          localforage.setItem('openPhotoboothAfterPair', '1');
+        } catch (err) {
+          console.error(err);
+        }
+      }
+    }
+
     this.state = {
       initialized: false,
+      hasPublicPhotoboothDirect: hasPhotoboothDirectAddress,
     };
-
-    let pairToken;
-    if (window.location) {
-      pairToken = qs.parse(window.location.search).pair;
-    }
 
     if (pairToken) {
       try {
@@ -122,7 +135,10 @@ class App extends Component {
       return this.renderLoading();
     }
 
-    const showLogin = !MyCommaAuth.isAuthenticated() && !getZoom(window.location.pathname) && !getSegmentRange(window.location.pathname);
+    const showLogin = !MyCommaAuth.isAuthenticated()
+      && !this.state.hasPublicPhotoboothDirect
+      && !getZoom(window.location.pathname)
+      && !getSegmentRange(window.location.pathname);
     let content = (
       <Suspense fallback={this.renderLoading()}>
         { showLogin ? this.anonymousRoutes() : this.authRoutes() }

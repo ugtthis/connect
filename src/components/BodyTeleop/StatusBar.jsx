@@ -222,6 +222,7 @@ const StatusBar = ({
 }) => {
   const dotColor = connectionState === 'connecting' ? '#facc15'
     : connectionState === 'connected' ? '#22c967'
+    : connectionState === 'preview' ? '#38bdf8'
     : connectionState === 'failed' ? '#da2535'
     : '#4b5559';
 

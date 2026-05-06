@@ -2,6 +2,7 @@ import React, { Component } from 'react';
 import { connect } from 'react-redux';
 import Obstruction from 'obstruction';
 import qs from 'query-string';
+import { push } from 'connected-react-router';
 import { BarcodeDetector } from 'barcode-detector/ponyfill';
 import { withStyles, Typography, Button, Modal, Paper, Divider, CircularProgress } from '@material-ui/core';
 import AddCircleOutlineIcon from '@material-ui/icons/AddCircleOutline';
@@ -109,6 +110,7 @@ class AddDevice extends Component {
       pairLoading: false,
       pairError: null,
       pairDongleId: null,
+      openPhotoboothFromQr: false,
       canvasWidth: null,
       canvasHeight: null,
     };
@@ -275,7 +277,7 @@ class AddDevice extends Component {
   }
 
   restart() {
-    this.setState({ pairLoading: false, pairError: null, pairDongleId: null });
+    this.setState({ pairLoading: false, pairError: null, pairDongleId: null, openPhotoboothFromQr: false });
     if (this.videoRef) {
       this.videoRef.play();
     }
@@ -283,7 +285,7 @@ class AddDevice extends Component {
   }
 
   modalClose() {
-    const { pairDongleId } = this.state;
+    const { pairDongleId, openPhotoboothFromQr } = this.state;
 
     this.stopScanning();
     if (this.stream) {
@@ -294,13 +296,19 @@ class AddDevice extends Component {
 
     if (pairDongleId && this.props.devices.length === 0) {
       this.props.dispatch(analyticsEvent('pair_device', { method: 'add_device_new' }));
-      window.location = `${window.location.origin}/${pairDongleId}`;
+      const suffix = openPhotoboothFromQr ? '?photobooth=1' : '';
+      window.location = `${window.location.origin}/${pairDongleId}${suffix}`;
       return;
     }
 
-    this.setState({ modalOpen: false, pairLoading: false, pairError: null, pairDongleId: null });
+    this.setState({
+      modalOpen: false, pairLoading: false, pairError: null, pairDongleId: null, openPhotoboothFromQr: false,
+    });
     if (pairDongleId) {
       this.props.dispatch(selectDevice(pairDongleId));
+      if (openPhotoboothFromQr) {
+        this.props.dispatch(push(`/${pairDongleId}?photobooth=1`));
+      }
     }
   }
 
@@ -313,9 +321,12 @@ class AddDevice extends Component {
     Sentry.captureMessage('qr scanned', { extra: { result } });
     const fromUrl = result.startsWith('https://');
     let pairToken;
+    let openPhotoboothFromQr = false;
     if (fromUrl) {
       try {
-        pairToken = qs.parse(result.split('?')[1]).pair;
+        const query = qs.parse(result.split('?')[1]);
+        pairToken = query.pair;
+        openPhotoboothFromQr = query.photobooth === '1';
         if (!pairToken) {
           throw new Error('empty pairToken from url qr code');
         }
@@ -342,7 +353,7 @@ class AddDevice extends Component {
       this.videoRef.pause();
     }
     this.stopScanning();
-    this.setState({ pairLoading: true, pairDongleId: null, pairError: null });
+    this.setState({ pairLoading: true, pairDongleId: null, pairError: null, openPhotoboothFromQr });
 
     try {
       verifyPairToken(pairToken, fromUrl, 'adddevice_verify_pairtoken');

@@ -25,6 +25,7 @@ import ResizeHandler from './ResizeHandler';
 
 import DriveView from './DriveView';
 import BodyTeleop from './BodyTeleop';
+import Photobooth from './Photobooth';
 import NoDeviceUpsell from './DriveView/NoDeviceUpsell';
 
 const styles = (theme) => ({
@@ -73,12 +74,17 @@ class ExplorerApp extends Component {
       pairDongleId: null,
       windowWidth: window.innerWidth,
       bodyTeleopOpen: false,
+      bodyTeleopPreviewUi: false,
+      photoboothOpen: false,
+      photoboothPreviewUi: false,
+      photoboothDirectAddress: null,
     };
 
     this.handleDrawerStateChanged = this.handleDrawerStateChanged.bind(this);
     this.updateHeaderRef = this.updateHeaderRef.bind(this);
     this.closePair = this.closePair.bind(this);
     this.closeBodyTeleop = this.closeBodyTeleop.bind(this);
+    this.closePhotobooth = this.closePhotobooth.bind(this);
   }
 
   async componentDidMount() {
@@ -114,15 +120,36 @@ class ExplorerApp extends Component {
         const resp = await Devices.pilotPair(pairToken);
         if (resp.dongle_id) {
           await localforage.removeItem('pairToken');
-          this.setState({
-            pairLoading: false,
-            pairError: null,
-            pairDongleId: resp.dongle_id,
-          });
+
+          let openPhotoboothAfterPair = false;
+          try {
+            openPhotoboothAfterPair = (await localforage.getItem('openPhotoboothAfterPair')) === '1';
+            if (openPhotoboothAfterPair) {
+              await localforage.removeItem('openPhotoboothAfterPair');
+            }
+          } catch (e) {
+            console.error(e);
+          }
 
           const device = await Devices.fetchDevice(resp.dongle_id);
           this.props.dispatch(updateDevice(device));
           this.props.dispatch(analyticsEvent('pair_device', { method: 'url_string' }));
+
+          if (openPhotoboothAfterPair) {
+            this.props.dispatch(selectDevice(resp.dongle_id));
+            this.props.dispatch(replace(`/${resp.dongle_id}?photobooth=1`));
+            this.setState({
+              pairLoading: false,
+              pairError: null,
+              pairDongleId: null,
+            });
+          } else {
+            this.setState({
+              pairLoading: false,
+              pairError: null,
+              pairDongleId: resp.dongle_id,
+            });
+          }
         } else {
           await localforage.removeItem('pairToken');
           console.log(resp);
@@ -147,8 +174,17 @@ class ExplorerApp extends Component {
 
     if (prevProps.search !== search) {
       const q = new URLSearchParams(search);
-      if (q.has('body') && q.get('body') != null) {
-        this.openBodyTeleop(q.get('body'));
+      const bodyAddr = q.get('body');
+      const photobooth = q.get('photobooth') === '1';
+
+      if (photobooth && bodyAddr != null && bodyAddr !== '') {
+        this.openPhotobooth(q.get('previewPhotobooth') === '1', bodyAddr);
+        this.props.dispatch(replace(pathname));
+      } else if (q.has('body') && q.get('body') != null) {
+        this.openBodyTeleop(q.get('body'), q.get('previewJoystick') === '1');
+        this.props.dispatch(replace(pathname));
+      } else if (photobooth) {
+        this.openPhotobooth(q.get('previewPhotobooth') === '1');
         this.props.dispatch(replace(pathname));
       }
     }
@@ -177,12 +213,22 @@ class ExplorerApp extends Component {
     this.setState({ pairLoading: false, pairError: null, pairDongleId: null });
   }
 
-  openBodyTeleop(address) {
-    this.setState({ bodyTeleopOpen: true, bodyTeleopAddress: address });
+  closePhotobooth() {
+    this.setState({ photoboothOpen: false, photoboothPreviewUi: false, photoboothDirectAddress: null });
+  }
+
+  openPhotobooth(previewUi = false, directAddress = null) {
+    this.setState({
+      photoboothOpen: true, photoboothPreviewUi: previewUi, photoboothDirectAddress: directAddress,
+    });
+  }
+
+  openBodyTeleop(address, previewUi = false) {
+    this.setState({ bodyTeleopOpen: true, bodyTeleopAddress: address, bodyTeleopPreviewUi: previewUi });
   }
 
   closeBodyTeleop() {
-    this.setState({ bodyTeleopOpen: false, bodyTeleopAddress: null });
+    this.setState({ bodyTeleopOpen: false, bodyTeleopAddress: null, bodyTeleopPreviewUi: false });
   }
 
   handleDrawerStateChanged(drawerOpen) {
@@ -198,8 +244,16 @@ class ExplorerApp extends Component {
   }
 
   render() {
-    const { classes, currentRoute, devices, dongleId } = this.props;
-    const { drawerIsOpen, pairLoading, pairError, pairDongleId, windowWidth, bodyTeleopOpen, bodyTeleopAddress } = this.state;
+    const { classes, currentRoute, devices, dongleId, search, pathname } = this.props;
+    const {
+      drawerIsOpen, pairLoading, pairError, pairDongleId,
+      windowWidth, bodyTeleopOpen, bodyTeleopAddress, bodyTeleopPreviewUi,
+      photoboothOpen, photoboothPreviewUi, photoboothDirectAddress,
+    } = this.state;
+    const previewJoystick = new URLSearchParams(search).get('previewJoystick') === '1';
+    const previewPhotobooth = new URLSearchParams(search).get('previewPhotobooth') === '1';
+    const showBodyTeleop = previewJoystick || bodyTeleopOpen;
+    const showPhotobooth = previewPhotobooth || photoboothOpen;
 
     const noDevicesUpsell = (devices?.length === 0 && !dongleId);
     const isLarge = noDevicesUpsell || windowWidth > 1080;
@@ -246,7 +300,24 @@ class ExplorerApp extends Component {
             ? <NoDeviceUpsell />
             : (currentRoute ? <DriveView /> : <Dashboard />)}
         </div>
-        { bodyTeleopOpen && <BodyTeleop onClose={this.closeBodyTeleop} directAddress={bodyTeleopAddress} /> }
+        { showPhotobooth && (
+          <Photobooth
+            onClose={previewPhotobooth
+              ? () => this.props.dispatch(replace(pathname))
+              : this.closePhotobooth}
+            previewUi={previewPhotobooth || photoboothPreviewUi}
+            directAddress={photoboothDirectAddress || undefined}
+          />
+        )}
+        { showBodyTeleop && (
+          <BodyTeleop
+            onClose={previewJoystick
+              ? () => this.props.dispatch(replace(pathname))
+              : this.closeBodyTeleop}
+            directAddress={previewJoystick ? '' : bodyTeleopAddress}
+            previewUi={previewJoystick || bodyTeleopPreviewUi}
+          />
+        )}
         <IosPwaPopup />
         <Modal open={ Boolean(pairLoading || pairError || pairDongleId) } onClose={ this.closePair }>
           <Paper className={classes.modal}>

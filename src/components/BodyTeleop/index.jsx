@@ -20,7 +20,9 @@ const progressMap = {
   'Receiving video...': 97,
 };
 
-const BodyTeleop = ({ dongleId, device, directAddress, onClose }) => {
+const BodyTeleop = ({
+  dongleId, device, directAddress, onClose, previewUi = false,
+}) => {
   const [connectionState, setConnectionState] = useState('disconnected');
   const [statusMessage, setStatusMessage] = useState(null);
   const [connectProgress, setConnectProgress] = useState(0);
@@ -36,6 +38,8 @@ const BodyTeleop = ({ dongleId, device, directAddress, onClose }) => {
   const connectionRef = useRef(null);
   const latencyCallbackRef = useRef(null);
   const switchTimerRef = useRef(null);
+  const previewFromUrl = new URLSearchParams(window.location.search).get('previewJoystick') === '1';
+  const previewMode = previewUi || previewFromUrl;
 
   useEffect(() => {
     const conn = new BodyTeleopConnection({
@@ -94,6 +98,7 @@ const BodyTeleop = ({ dongleId, device, directAddress, onClose }) => {
   }, [isLandscape]);
 
   const handleConnect = useCallback(async () => {
+    if (previewMode) return;
     const conn = connectionRef.current;
     if (!conn) return;
     setError(null);
@@ -107,11 +112,12 @@ const BodyTeleop = ({ dongleId, device, directAddress, onClose }) => {
     } catch (err) {
       setError(err.message);
     }
-  }, [dongleId, directAddress]);
+  }, [dongleId, directAddress, previewMode]);
 
   useEffect(() => {
+    if (previewMode) return;
     handleConnect();
-  }, []);
+  }, [handleConnect, previewMode]);
 
   const handleDisconnect = useCallback(() => {
     setError(null);
@@ -137,11 +143,13 @@ const BodyTeleop = ({ dongleId, device, directAddress, onClose }) => {
 
   const connection = connectionRef.current;
   const connected = connectionState === 'connected';
+  const showTeleopUi = connected || previewMode;
+  const displayConnectionState = previewMode ? 'preview' : connectionState;
   const deviceName = directAddress || (device ? deviceNamePretty(device) : (isLandscape ? 'Body' : 'Body Teleop'));
 
   const statsState = useStats(connection, connectionState, latencyCallbackRef);
   const videoProps = {
-    videoRef, connectionState, error,
+    videoRef, connectionState: previewMode ? 'connected' : connectionState, error,
     statusMessage, connectProgress,
     onConnect: handleConnect,
   };
@@ -158,11 +166,16 @@ const BodyTeleop = ({ dongleId, device, directAddress, onClose }) => {
             <div className="rounded-[20px] px-3 py-1 text-xs font-medium text-white bg-glass">
               {deviceName}
             </div>
+            {previewMode && (
+              <div className="rounded-[20px] px-3 py-1 text-xs font-medium text-sky-100 bg-sky-500/25 border border-sky-300/30">
+                Preview mode
+              </div>
+            )}
           </div>
-          {connected && (
+          {showTeleopUi && (
             <>
               <StatusBar
-                connectionState={connectionState}
+                connectionState={displayConnectionState}
                 batteryLevel={batteryLevel}
                 className="absolute top-3 right-3 z-10 flex items-center gap-2"
                 {...statsState}
@@ -200,11 +213,16 @@ const BodyTeleop = ({ dongleId, device, directAddress, onClose }) => {
           <ArrowBackBold style={{ fontSize: 20 }} />
         </IconButton>
         <Typography className="text-base font-medium ml-2 flex-1">{deviceName}</Typography>
+        {previewMode && (
+          <div className="rounded-[20px] px-3 py-1 text-xs font-medium text-sky-100 bg-sky-500/25 border border-sky-300/30">
+            Preview mode
+          </div>
+        )}
       </div>
       <div className="flex flex-col flex-1 overflow-hidden">
-        {connected && (
+        {showTeleopUi && (
           <StatusBar
-            connectionState={connectionState}
+            connectionState={displayConnectionState}
             batteryLevel={batteryLevel}
             className="flex items-center justify-end p-2 gap-2"
             {...statsState}
@@ -212,11 +230,11 @@ const BodyTeleop = ({ dongleId, device, directAddress, onClose }) => {
         )}
         <div className="relative flex items-center justify-center overflow-hidden bg-[#030404] flex-none">
           <Video {...videoProps} />
-          {connected && statsState.showStats && (
+          {showTeleopUi && statsState.showStats && (
             <StatsPanel {...statsState} />
           )}
         </div>
-        {connected ? (
+        {showTeleopUi ? (
           <>
             <ControlsBar
               connection={connection}

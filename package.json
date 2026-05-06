@@ -3,9 +3,11 @@
   "version": "0.8.0",
   "scripts": {
     "start": "vite",
+    "start:host": "vite --host",
     "build:development": "env-cmd .env.development vite build --mode development",
     "build:production": "vite build",
     "serve": "vite preview",
+    "serve:host": "vite preview --host",
     "lint": "eslint --ext .js,.jsx,.ts,.tsx src",
     "test": "jest",
     "test-coverage": "jest --coverage",

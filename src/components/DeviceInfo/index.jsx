@@ -12,6 +12,7 @@ import { athena as Athena, devices as Devices } from '@commaai/api';
 import { analyticsEvent } from '../../actions';
 import Colors from '../../colors';
 import { GamepadIcon } from '../../icons';
+import PhotoCamera from '@material-ui/icons/PhotoCamera';
 import { deviceNamePretty, deviceIsOnline } from '../../utils';
 import { isMetric, KM_PER_MI } from '../../utils/conversions';
 import ResizeHandler from '../ResizeHandler';
@@ -204,6 +205,7 @@ class DeviceInfo extends Component {
       windowWidth: window.innerWidth,
       isTimeSelectOpen: false,
       isCommaBody: false,
+      photoboothState: null,
     };
 
     this.snapshotButtonRef = React.createRef();
@@ -213,6 +215,7 @@ class DeviceInfo extends Component {
     this.fetchDeviceInfo = this.fetchDeviceInfo.bind(this);
     this.fetchDeviceCarHealth = this.fetchDeviceCarHealth.bind(this);
     this.fetchIsNotCar = this.fetchIsNotCar.bind(this);
+    this.fetchPhotoboothState = this.fetchPhotoboothState.bind(this);
     this.takeSnapshot = this.takeSnapshot.bind(this);
     this.snapshotType = this.snapshotType.bind(this);
     this.renderButtons = this.renderButtons.bind(this);
@@ -236,6 +239,7 @@ class DeviceInfo extends Component {
         snapshot: {},
         windowWidth: window.innerWidth,
         isCommaBody: false,
+        photoboothState: null,
       });
     }
   }
@@ -254,6 +258,7 @@ class DeviceInfo extends Component {
       this.fetchDeviceInfo();
       this.fetchDeviceCarHealth();
       this.fetchIsNotCar();
+      this.fetchPhotoboothState();
     }
   }
 
@@ -301,6 +306,39 @@ class DeviceInfo extends Component {
           Sentry.captureException(err, { fingerprint: 'device_info_athena_pandastate' });
         }
         this.setState({ carHealth: { error: err.message } });
+      }
+    }
+  }
+
+  async fetchPhotoboothState() {
+    const { dongleId, device } = this.props;
+    if (!deviceIsOnline(device)) {
+      if (this.mounted && dongleId === this.props.dongleId) {
+        this.setState({ photoboothState: null });
+      }
+      return;
+    }
+
+    try {
+      const payload = {
+        method: 'getPhotoboothState',
+        jsonrpc: '2.0',
+        id: 0,
+      };
+      const resp = await Athena.postJsonRpcPayload(dongleId, payload);
+      if (this.mounted && dongleId === this.props.dongleId) {
+        if (resp.error) {
+          this.setState({ photoboothState: { supported: false, offroad: false, ready: false, reason: 'unsupported_device' } });
+        } else {
+          this.setState({ photoboothState: resp.result || {} });
+        }
+      }
+    } catch (err) {
+      if (this.mounted && dongleId === this.props.dongleId) {
+        this.setState({ photoboothState: { supported: false, offroad: false, ready: false, reason: 'unsupported_device' } });
+      }
+      if (!err.message || err.message.indexOf('Device not registered') === -1) {
+        console.error(err);
       }
     }
   }
@@ -495,7 +533,7 @@ class DeviceInfo extends Component {
 
   renderButtons() {
     const { classes, device } = this.props;
-    const { snapshot, carHealth, windowWidth, isTimeSelectOpen, isCommaBody } = this.state;
+    const { snapshot, carHealth, windowWidth, isTimeSelectOpen, isCommaBody, photoboothState } = this.state;
 
     let batteryVoltage;
     let batteryBackground = Colors.grey400;
@@ -525,8 +563,38 @@ class DeviceInfo extends Component {
       pingTooltip = `Last ping on ${lastAthenaPing.format('MMM D, YYYY')} at ${lastAthenaPing.format('h:mm A')}`;
     }
 
+    const photoboothReady = photoboothState && photoboothState.supported && photoboothState.ready;
+    const photoboothShow = photoboothState && photoboothState.supported;
+    const photoboothDisabled = !deviceIsOnline(device) || !photoboothReady;
+    let photoboothTitle = 'Photobooth';
+    if (!deviceIsOnline(device)) {
+      photoboothTitle = 'Device offline';
+    } else if (photoboothState && photoboothState.supported && !photoboothState.offroad) {
+      photoboothTitle = 'Photobooth works when parked/offroad.';
+    } else if (!photoboothReady) {
+      photoboothTitle = 'Photobooth unavailable';
+    }
+
     return (
       <>
+        {photoboothShow && (
+          <Tooltip
+            classes={{ tooltip: classes.popover }}
+            title={photoboothTitle}
+            placement="bottom"
+          >
+            <span>
+              <Button
+                style={photoboothDisabled ? { opacity: 0.45 } : {}}
+                classes={{ root: `${classes.button} ${classes.actionButtonIcon}` }}
+                onClick={ () => this.props.dispatch(push('?photobooth=1')) }
+                disabled={photoboothDisabled}
+              >
+                <PhotoCamera fontSize="inherit" />
+              </Button>
+            </span>
+          </Tooltip>
+        )}
         {isCommaBody && (
           <Tooltip
             classes={{ tooltip: classes.popover }}
